@@ -46,7 +46,7 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "check": "node --check src/extension.js && node --check src/hook.js && node --check src/helpers.js && node --check src/uninstall.js",
-    "package": "npx --yes @vscode/vsce package",
+    "package": "vsce package",
     "vscode:uninstall": "node ./src/uninstall.js",
     "test:integration": "node test/integration/run.js"
   },
@@ -255,6 +255,7 @@
     "virtualWorkspaces": false
   },
   "devDependencies": {
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^4.1.0"
   }
 }
