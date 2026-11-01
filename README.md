@@ -1,164 +1,117 @@
-# Agent Live View (experimental v0.4.0)
+<p align="center"><img src="images/banner.png" alt="Agent Live View: watch Claude Code edit your project, file by file, as it happens"></p>
 
-Automatically open the actual files being changed while Claude Code works in the **VS Code chat panel**. Does **not** require running Claude Code in a CLI terminal. Normal VS Code editors are used, so you see source code with syntax highlighting, not tool-call logs.
+# Agent Live View
 
-## What works in this prototype
+See what your AI coding agent is changing while it works. When Claude Code (or any other tool) edits a file in your workspace, Agent Live View opens that file in a separate editor column, scrolls to the change and briefly highlights the edited lines in green.
 
-- Watches real on-disk file changes, including files written by shell scripts and Python.
-- Also listens for live VS Code text-document changes.
-- Opens changed source files as persistent tabs without deliberately stealing keyboard focus.
-- **Viewing pace**: each changed file stays as the front tab for at least 4 seconds (configurable) before another file replaces it in the same column. Different agent columns advance independently.
-- **Source allowlist**: shows only specified file types (`.tsx`, `.ts`, `.php`, `.twig`, etc.) by default. JSON is hidden unless you explicitly allow certain JSON paths. Existing scratch, cache, trace and version-file exclusions still apply.
-- Coalesces repeated writes to the same file, so rapid save storms do not endlessly jump around.
-- Scrolls near the modified lines, showing a short green whole-line highlight.
-- Uses a known live VS Code text change or a previous snapshot to locate edits. For a file seen for the first time it tries `git diff` to locate changed lines and otherwise falls back to the last line.
-- Optional Claude Code hooks add agent IDs and editing-round boundaries, enabling up to three editor columns and closing only extension-owned tabs at the start of the *next editing round*.
-- Explicit commands to pause watching, install hooks and show diagnostics.
+Your own editor stays where it is. Agent files open in the columns to its right, and your cursor and scroll position are never moved.
 
-## Install
+> **Preview release.** Agent Live View is under active development. Please report problems on [GitHub](https://github.com/craftyfm/x2-agent-live-view/issues).
 
-Option A: Use the experimental `.vsix` supplied with this source. In VS Code open Extensions -> `...` -> **Install from VSIX...**.
+## Features
 
-Option B: Package the extension yourself with Node.js and `@vscode/vsce`:
+- **Live file following.** Changed files open as normal editor tabs with syntax highlighting, not as tool-call logs. Works with edits made through the editor, shell commands, scripts and build tools.
+- **Changed lines highlighted.** The editor scrolls to the change and highlights it for a few seconds (configurable).
+- **Viewing pace.** Each file stays in front for at least 4 seconds before the next one replaces it, so you have time to read it. Claude Code is never slowed down; repeated writes to the same file are combined.
+- **A column per agent.** With the optional Claude Code hooks installed, each agent and subagent gets its own column (up to three), and tabs from the previous prompt are closed when the next prompt starts editing.
+- **Include and exclude filters.** Only source files are shown by default. Logs, build output, caches, scratch files and most JSON are skipped. Exclusions always win over inclusions.
 
-```bash
-npm install --global @vscode/vsce
-cd agent-live-view
-vsce package
-```
+## Getting started
 
-Then install the generated VSIX in VS Code. (VS Code also supports opening this source folder and pressing F5 if you have a suitable extension debug launch configuration.)
+1. Install the extension and open a project folder.
+2. Check that the status bar shows **Live View: ON**. Click it to pause or resume.
+3. Ask Claude Code to change some source files. Each changed file opens in the column to the right of your editor.
 
-## Test the basic file watcher first
+That is all you need for basic use. To get a column per agent and automatic tab clean-up, install the Claude Code hooks below.
 
-1. Open any project folder in VS Code. Make sure the status bar reads `Live View: ON`.
-2. Leave Claude chat open on the right.
-3. Ask Claude to modify a tracked source file, or edit a source file *externally* via a terminal command.
-4. The actual source file should open as a normal editor tab, with a brief green highlight.
-5. Run **Agent Live View: Set Viewing Pace** to choose 2, 4, 6 or 10 seconds per file.
-6. Check **View > Output > Agent Live View** if nothing opens. The watcher does not need Claude hooks to work.
+## Claude Code hooks (optional)
 
-## Enable agent attribution and editing-round cleanup
+Without hooks, Agent Live View sees *that* a file changed but not *which agent* changed it, so all changes share one column.
 
-In the Command Palette (`Ctrl+Shift+P` on Windows):
+Run **Agent Live View: Install Claude Agent Tracking Hooks** from the Command Palette, then start a new Claude Code session. This:
 
-**Agent Live View: Install Claude Agent Tracking Hooks**
+- adds hook entries to the project's `.claude/settings.local.json` (a local file that is normally not committed), and backs up the original to `.claude/settings.local.json.agent-live-view.bak` the first time;
+- copies a small hook script to `~/.agent-live-view/`, so the hooks keep working when the extension updates.
 
-This merges six minimal hook entries into the chosen project's `.claude/settings.local.json` and backs up existing settings to `.claude/settings.local.json.agent-live-view.bak`. Restart the Claude Code conversation/session so new hook settings load. The hook helper only logs session/agent/file/tool metadata to a JSONL file in the computer's temporary folder. It does **not** log prompts, command text or source contents, and uses no network. Node.js must be on PATH for the hook process.
+**Privacy.** The hook script records only the event name, session and agent IDs, tool name and file path. It does not record prompts, commands, file contents or tool output, and it makes no network requests. Events are written to `~/.agent-live-view/events/`, which only your user account can read.
 
-**After updating from v0.1.0**, rerun **Agent Live View: Install Claude Agent Tracking Hooks** to refresh the hook command path. Restart the Claude Code conversation/session afterwards. Normal file watching still works without hooks.
+To remove the hooks, run **Agent Live View: Remove Claude Agent Tracking Hooks**. Uninstalling the extension also removes them from every project where they were installed.
 
-Run **Agent Live View: Show Diagnostics** to see the exact temporary event path. Agent-specific columns only appear when Claude Code actually emits distinct `agent_id` values. Shell commands without a file path cannot always be attributed uniquely if multiple agents are running simultaneously. Those changes still appear, in a shared Unattributed column.
+Hooks need [Node.js](https://nodejs.org/) to be installed.
 
-## Tuning your display
+## Choosing which files appear
 
-By default, files are held on-screen for **4 seconds**, green changed-line highlighting stays for **6 seconds**, and `version.json` is ignored. To change these, open **Settings (JSON)**:
+By default (`agentLiveView.filterMode: "includeOnly"`) only files matching `agentLiveView.includeFiles` appear. This covers common source types: `ts`, `tsx`, `js`, `jsx`, `php`, `twig`, `vue`, `svelte`, `css`, `scss`, `sass`, `less`, `html`, `py`, `sql`, `go` and `rs`.
+
+JSON is not included by default. Add only the files you care about:
 
 ```json
-"agentLiveView.minViewMs": 6000,
-"agentLiveView.highlightDurationMs": 8000,
-"agentLiveView.excludeFiles": ["**/version.json", "**/package-lock.json", "**/composer.lock"]
+"agentLiveView.includeFiles": [
+  "**/*.{ts,tsx,js,jsx}",
+  "**/*.php",
+  "**/package.json",
+  "config/important.json"
+]
 ```
 
-`excludeFiles` patterns override the allowlist across folders and do **not** interfere with actual file writes, Git, builds or version numbers: they only stop the extension opening those files. If you want to watch `version.json` again, remove it from the list.
+`agentLiveView.excludeFiles` lists patterns that never appear, even if they match an include pattern. The defaults cover logs, traces, temporary and backup files, and `scratch`, `tmp`, `temp`, `logs` and `traces` folders. `agentLiveView.excludeFolders` lists folder names that are skipped wherever they occur, such as `node_modules`, `vendor`, `dist` and `.git`.
 
-The pace is a **minimum screen dwell**, not a throttle on Claude itself. Claude keeps coding at full speed. When many files change rapidly, the viewer catches up through its ordered, coalesced queue and will show the latest saved state of each file rather than a simulated keystroke-by-keystroke animation.
+Patterns are relative to the workspace folder and support `*`, `**`, `?` and `{a,b}`. A pattern without a `/` (such as `*.log`) matches file names in any folder. Supplying your own list replaces the default list.
 
-## Include selected source files, plus only the JSON you want
+To edit the lists without opening settings, use **Manage Included Patterns** and **Manage Excluded Patterns**. Changes apply immediately.
 
-Version 0.4.0 defaults to `agentLiveView.filterMode: "includeOnly"`: changed files **must match** `agentLiveView.includeFiles` to appear. Most `.json` files are not shown by default, but you can add individual JSON filenames or paths.
+Set `agentLiveView.filterMode` to `"excludeOnly"` to show every file except exclusions.
 
-Copy the following into your project's `.vscode/settings.json` (or merge these entries into your existing settings):
+## Settings
 
-```json
-{
-  "agentLiveView.filterMode": "includeOnly",
-  "agentLiveView.includeFiles": [
-    "**/*.tsx", "**/*.ts", "**/*.jsx", "**/*.js",
-    "**/*.php", "**/*.twig", "**/*.vue", "**/*.svelte",
-    "**/*.css", "**/*.scss", "**/*.sass", "**/*.less",
-    "**/*.html", "**/*.htm", "**/*.py", "**/*.sql",
-    "**/*.go", "**/*.rs",
-    "**/package.json", "**/composer.json", "config/important.json"
-  ],
-  "agentLiveView.excludeFiles": [
-    "**/version.json", "**/scratch*", "**/scratch*/**",
-    "**/tmp/**", "**/temp/**", "**/traces/**",
-    "**/*.log", "**/*.trace", "**/*.cache"
-  ]
-}
-```
+| Setting | Default | Description |
+| --- | --- | --- |
+| `agentLiveView.enabled` | `true` | Open changed files automatically. |
+| `agentLiveView.reserveFirstColumn` | `true` | Keep the first editor column for your own work. Agent files open to its right. |
+| `agentLiveView.maxColumns` | `3` | Maximum number of editor columns used for agents. |
+| `agentLiveView.minViewMs` | `4000` | Minimum time a file stays in front before another file replaces it in the same column. |
+| `agentLiveView.highlightDurationMs` | `6000` | How long edited lines stay highlighted. `0` turns highlighting off. |
+| `agentLiveView.debounceMs` | `180` | Wait after a change before opening the file. |
+| `agentLiveView.maxFileSizeKb` | `1536` | Larger files are not opened. |
+| `agentLiveView.filterMode` | `includeOnly` | `includeOnly` or `excludeOnly`. |
+| `agentLiveView.includeFiles` | source types | Files that may appear in `includeOnly` mode. |
+| `agentLiveView.excludeFiles` | noise patterns | Files that never appear. |
+| `agentLiveView.excludeFolders` | build/cache folders | Folder names that are always skipped. |
+| `agentLiveView.ignoreUnattributedWhenHooksActive` | `false` | With hooks installed, skip changes that cannot be linked to a Claude Code agent. |
 
-The allowlist is the first gate; **excluded patterns always take precedence**. For example, `**/*.php` allows PHP in any folder, but `**/scratch*/**` excludes scratch PHP files. Because `**/*.json` is *not* allowed, JSON files remain hidden except those individually included. Avoid adding a broad `**/*.json` exclusion if you intend to see individual JSON files, since excludes take precedence.
+## Commands
 
-To change these lists without hand-editing JSON, use **Agent Live View: Manage Included Patterns** and **Agent Live View: Manage Excluded Patterns**. Both take effect immediately. They only affect live viewing, not actual files or Claude.
+- **Agent Live View: Toggle Watching**
+- **Agent Live View: Set Viewing Pace**
+- **Agent Live View: Manage Included Patterns**
+- **Agent Live View: Manage Excluded Patterns**
+- **Agent Live View: Install Claude Agent Tracking Hooks**
+- **Agent Live View: Remove Claude Agent Tracking Hooks**
+- **Agent Live View: Close Automatically Opened Tabs**
+- **Agent Live View: Show Diagnostics**: writes the current state to **View > Output > Agent Live View**.
 
-To revert to the old behaviour of watching everything except excludes, set `"agentLiveView.filterMode": "excludeOnly"`.
+## Known limitations
 
-## Ignore noisy, generated and scratch files
-
-Open VS Code **Settings (JSON)** for your project and set `agentLiveView.excludeFiles`.
-This is a list of workspace-relative **glob patterns** for files *or* folders; it only affects which files Agent Live View opens. Claude continues writing files normally, and all files remain in Explorer and Git.
-
-```json
-{
-  "agentLiveView.excludeFiles": [
-    "**/version.json",
-    "**/*.log",
-    "**/*.log.*",
-    "**/*.trace",
-    "**/*.trace.*",
-    "**/traces/**",
-    "**/logs/**",
-    "**/tmp/**",
-    "**/temp/**",
-    "**/scratch*",
-    "**/scratch*/**",
-    "**/test-fixtures/generated/**",
-    "**/runtime-cache/**"
-  ]
-}
-```
-
-These patterns are **examples**; when you supply your own `excludeFiles` list, it *replaces* the default list, so include `**/version.json` if you still want to hide it. Default patterns also cover `*.tmp`, `*.temp`, `*.swp`, `*.bak`, `*.cache`, `*.pyc`, `*.tsbuildinfo`, and editor backup files. The separate `agentLiveView.excludeFolders` setting ignores exact folder names (such as `.cache`, `__pycache__`, `playwright-report`, and `test-results`) wherever they occur.
-
-- `**/*.log`: all `.log` files anywhere, including the project root
-- `**/traces/**`: all files inside any folder named `traces`
-- `**/scratch*`: scratch files such as `scratch.txt`, `scratchpad.py`, or `scratch_test.js`
-- `**/scratch*/**`: all files inside folders whose names start with `scratch`
-- `**/temp/**`: files inside a `temp` folder
-- `**/some-generated-file.json`: a single generated file anywhere
-
-Patterns support `*`, `**` and `?`, with forward slash directory separators. Paths are relative to each open VS Code workspace root, and patterns without a slash (such as `*.log`) also match filenames in nested folders. Case matches the underlying operating system (Windows matching is case-insensitive).
-
-**Quick edit:** `Ctrl+Shift+P` → **Agent Live View: Manage Excluded Patterns** → Add / Remove / Open Settings. Changes take effect immediately and also remove newly ignored files from the pending viewing queue. It doesn't automatically close tabs which were already displayed.
-
-**Important:** `test` files, `tests` folders and `*.test.ts` source are **not** excluded by default. If you want to skip disposable experiments, add a targeted pattern such as `**/scratch_tests/**` instead of hiding your whole test suite.
-
-## Important limitations
-
-- **Experimental**: The VSIX has not been run inside an actual VS Code window in this build environment. It passed Node syntax checks and basic helper unit tests, but needs on-device testing with your Claude Code version.
-- The first edit of a previously unseen, untracked source file may scroll to the bottom instead of the precise changed line. Later edits use a snapshot to find the difference.
-- Without Claude hooks, a file watcher cannot know which application or agent made an edit. It will also show non-Claude source changes, and it cannot recognise new conversation rounds to close older tabs automatically.
-- Opening an editor with `preserveFocus` still changes the displayed tab and may expand collapsed editor groups in some VS Code versions. The chat panel should remain in the right sidebar to avoid competing for editor groups.
-- When an agent writes in a different git worktree outside the open VS Code workspace, open that worktree as another workspace folder for the file watcher to see it.
-- The extension deliberately avoids closing pinned, manually opened and unsaved tabs. It doesn't restore editor-group layout automatically, to avoid destroying the user's chosen layout.
-- Current version is intended for desktop VS Code with a local or directly accessible filesystem. Remote workspaces are not yet tested.
-
-## VS Code Commands
-
-- `Agent Live View: Toggle Watching`
-- `Agent Live View: Set Viewing Pace`
-- `Agent Live View: Manage Included Patterns`
-- `Agent Live View: Manage Excluded Patterns`
-- `Agent Live View: Install Claude Agent Tracking Hooks`
-- `Agent Live View: Close Automatically Opened Tabs`
-- `Agent Live View: Show Diagnostics`
+- Without hooks, changes made by other programs (formatters, `git checkout`, build tools) also appear. Your own saves in files you have just typed in are ignored. At most 25 files wait to be shown; when more change at once, the oldest are skipped.
+- The first edit to a file that is not tracked by git may scroll to the end of the file instead of to the change. Later edits are located exactly.
+- Keep the Claude Code chat in the sidebar rather than in an editor column, so agent files do not cover it.
+- Changes in a git worktree outside the open workspace are not seen. Add the worktree as a workspace folder to follow it.
+- Agent Live View closes only tabs that it opened, and never closes pinned or unsaved tabs.
+- In untrusted workspaces, git is not used to find changed lines, hooks cannot be installed and the workspace's own pattern settings are ignored.
+- Remote and virtual workspaces have not been tested.
 
 ## Development
 
-Node 18+; no runtime dependencies beyond the VS Code API. Run `npm test` and `npm run check`. If you want a debug window, open this folder with VS Code and add a launch config with type `extensionHost`, request `launch`, and args `${workspaceFolder}`.
+Requires Node.js 18 or later. There are no runtime dependencies.
 
-## Author notes
+```bash
+npm test          # unit tests
+npm run check     # syntax check
+npm run package   # build a .vsix with @vscode/vsce
+```
 
-This is a self-contained prototype for X2 Network's requested workflow, not a published Marketplace extension. It does not use or bundle HariTrail.
+Press F5 in VS Code to start an Extension Development Host with the extension loaded.
+
+## License
+
+[MIT](LICENSE) © X2 Network Pty Ltd

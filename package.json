@@ -1,11 +1,26 @@
 {
   "name": "agent-live-view",
   "displayName": "Agent Live View",
-  "description": "Automatically open and follow files as AI coding agents change them.",
-  "version": "0.4.0",
+  "description": "Follow AI coding agents as they work: changed files open in their own editor columns with the edited lines highlighted. Works with Claude Code.",
+  "version": "0.5.0",
   "publisher": "x2network",
   "license": "MIT",
   "private": true,
+  "preview": true,
+  "pricing": "Free",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#0b1628",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/craftyfm/x2-agent-live-view.git"
+  },
+  "bugs": {
+    "url": "https://github.com/craftyfm/x2-agent-live-view/issues"
+  },
+  "homepage": "https://github.com/craftyfm/x2-agent-live-view#readme",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -14,20 +29,26 @@
     "onStartupFinished"
   ],
   "categories": [
-    "Other",
-    "Visualization"
+    "AI",
+    "Visualization",
+    "Other"
   ],
   "keywords": [
-    "Claude",
+    "claude code",
+    "claude",
+    "ai agent",
     "agent",
-    "file watcher",
     "live edit",
-    "multi-agent"
+    "multi-agent",
+    "file watcher",
+    "follow changes"
   ],
   "scripts": {
-    "test": "node --test",
-    "check": "node --check src/extension.js && node --check src/hook.js && node --check src/helpers.js",
-    "package": "npx --yes @vscode/vsce package"
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/extension.js && node --check src/hook.js && node --check src/helpers.js && node --check src/uninstall.js",
+    "package": "npx --yes @vscode/vsce package",
+    "vscode:uninstall": "node ./src/uninstall.js",
+    "test:integration": "node test/integration/run.js"
   },
   "contributes": {
     "commands": [
@@ -52,6 +73,10 @@
         "title": "Agent Live View: Install Claude Agent Tracking Hooks"
       },
       {
+        "command": "agentLiveView.removeHooks",
+        "title": "Agent Live View: Remove Claude Agent Tracking Hooks"
+      },
+      {
         "command": "agentLiveView.clear",
         "title": "Agent Live View: Close Automatically Opened Tabs"
       },
@@ -68,12 +93,17 @@
           "default": true,
           "description": "Open changed source files automatically."
         },
+        "agentLiveView.reserveFirstColumn": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the first editor column for your own work. Agent files open in the columns to its right."
+        },
         "agentLiveView.maxColumns": {
           "type": "integer",
           "default": 3,
           "minimum": 1,
           "maximum": 3,
-          "description": "Maximum number of agent editor columns."
+          "description": "Maximum number of editor columns used for agents. Additional agents share the last one."
         },
         "agentLiveView.debounceMs": {
           "type": "integer",
@@ -210,5 +240,21 @@
         }
       }
     }
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In untrusted workspaces, git is not used to locate changed lines, Claude Code hooks cannot be installed, and the workspace’s own file pattern settings are ignored.",
+      "restrictedConfigurations": [
+        "agentLiveView.includeFiles",
+        "agentLiveView.excludeFiles",
+        "agentLiveView.excludeFolders",
+        "agentLiveView.filterMode"
+      ]
+    },
+    "virtualWorkspaces": false
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "^2.5.2"
   }
 }

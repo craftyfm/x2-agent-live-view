@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16294a"/><stop offset="1" stop-color="#0a1426"/>
+    </linearGradient>
+    <linearGradient id="hl" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22c55e"/><stop offset="1" stop-color="#4ade80"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="51.5" fill="none" stroke="#3b82f6" stroke-opacity=".45" stroke-width="3"/>
+  <!-- window bar -->
+  <circle cx="50" cy="52" r="7" fill="#38bdf8"/><circle cx="72" cy="52" r="7" fill="#38bdf8" opacity=".55"/><circle cx="94" cy="52" r="7" fill="#38bdf8" opacity=".3"/>
+  <!-- column 1: user -->
+  <rect x="38" y="76" width="54" height="142" rx="12" fill="#1e3358"/>
+  <rect x="48" y="92" width="34" height="8" rx="4" fill="#5b7bb0"/>
+  <rect x="48" y="110" width="24" height="8" rx="4" fill="#5b7bb0"/>
+  <rect x="48" y="128" width="30" height="8" rx="4" fill="#5b7bb0"/>
+  <rect x="48" y="146" width="20" height="8" rx="4" fill="#5b7bb0"/>
+  <!-- column 2: agent -->
+  <rect x="101" y="76" width="54" height="142" rx="12" fill="#1e3358"/>
+  <rect x="111" y="92" width="30" height="8" rx="4" fill="#5b7bb0"/>
+  <rect x="105" y="106" width="46" height="16" rx="5" fill="url(#hl)"/>
+  <rect x="111" y="128" width="26" height="8" rx="4" fill="#5b7bb0"/>
+  <rect x="111" y="146" width="34" height="8" rx="4" fill="#5b7bb0"/>
+  <!-- column 3: agent -->
+  <rect x="164" y="76" width="54" height="142" rx="12" fill="#1e3358"/>
+  <rect x="174" y="92" width="22" height="8" rx="4" fill="#5b7bb0"/>
+  <rect x="174" y="110" width="34" height="8" rx="4" fill="#5b7bb0"/>
+  <rect x="168" y="142" width="46" height="16" rx="5" fill="url(#hl)"/>
+  <rect x="168" y="162" width="46" height="16" rx="5" fill="url(#hl)" opacity=".7"/>
+  <!-- live dot -->
+  <circle cx="206" cy="52" r="10" fill="#22c55e"/>
+  <circle cx="206" cy="52" r="16" fill="none" stroke="#22c55e" stroke-opacity=".45" stroke-width="3"/>
+</svg>
