@@ -5,14 +5,25 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
-const { lineDifference, normalizePath, safeFilePath, isInsideWorkspace, shellQuote, isAllowedByFilePatterns } = require('./helpers');
+const {
+  lineDifference, normalizePath, safeFilePath, isInsideWorkspace, shellQuote, isAllowedByFilePatterns,
+  addHookEntries, removeHookEntries, ownHookCommands, findExecutable
+} = require('./helpers');
+
+// The hook script and event logs live outside the extension folder, because
+// that folder is renamed on every update and deleted on uninstall.
+const DATA_DIR = path.join(os.homedir(), '.agent-live-view');
+const HOOK_SCRIPT = path.join(DATA_DIR, 'hook.js');
+const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
+const MAX_SNAPSHOTS = 200;
+const MAX_QUEUE = 25;
+// A watcher event this soon after the user typed in the same file is treated as the user's own save.
+const USER_SAVE_WINDOW_MS = 10000;
 
 let output;
 let statusBar;
 let decoration;
 let running = true;
-let previousLayout = null;
-const disposables = [];
 const pending = new Map();
 // Coalesce repeat writes to the same file rather than racing through every event.
 const queuedChanges = new Map();
@@ -29,9 +40,9 @@ const activeTools = new Map();
 const recentAgents = new Map();
 const eventLogState = new Map();
 const decorationTimers = new Map();
+const userTypedAt = new Map();
 let resetOnNextEdit = false;
 let lastClaudeActivity = 0;
-let layoutColumns = 1;
 let lastFileChanged = '';
 let lastFileError = '';
 
@@ -52,13 +63,20 @@ function ignored(uri) {
     !isAllowedByFilePatterns(relative, setting('filterMode'), setting('includeFiles'), setting('excludeFiles')) ||
     uri.fsPath.endsWith('.map') || uri.fsPath.endsWith('.min.js');
 }
+function isWatching() { return running && setting('enabled'); }
 function updateStatus() {
-  statusBar.text = `$(eye) Live View: ${running ? 'ON' : 'OFF'}`;
-  statusBar.tooltip = `Agent Live View: ${agentColumns.size} agent(s), last file ${lastFileChanged || 'none'}. Click to toggle.`;
+  statusBar.text = `$(eye) Live View: ${isWatching() ? 'ON' : 'OFF'}`;
+  statusBar.tooltip = !setting('enabled')
+    ? 'Agent Live View is turned off in settings (agentLiveView.enabled).'
+    : `Agent Live View: ${agentColumns.size} agent(s), last file ${lastFileChanged || 'none'}. Click to toggle.`;
 }
 function eventPath(folder) {
   const id = crypto.createHash('sha256').update(normalizePath(folder.uri.fsPath)).digest('hex').slice(0,24);
-  return path.join(os.tmpdir(), 'agent-live-view', id + '.jsonl');
+  return path.join(DATA_DIR, 'events', id + '.jsonl');
+}
+// True once a hook event file has been found for any workspace folder.
+function hooksActive() {
+  return [...eventLogState.values()].some(s => s.seen);
 }
 function isOpenAlready(uri) {
   return vscode.window.tabGroups.all.some(group => group.tabs.some(tab =>
@@ -81,7 +99,6 @@ async function beginNewRoundIfNecessary() {
   agentColumns.clear();
   lastShownAtByColumn.clear();
   currentFileByColumn.clear();
-  layoutColumns = 1;
   // Don't collapse the user's editor groups: doing so would rearrange manual tabs.
   log('Editing round started, previous auto-opened tabs closed.');
 }
@@ -95,25 +112,20 @@ function getAgentKey(file) {
   const recentlyActive = [...recentAgents.entries()].filter(([,v]) => now-v < 1800).map(([k]) => k);
   return recentlyActive.length === 1 ? recentlyActive[0] : 'unattributed';
 }
-async function chooseColumn(key) {
+// Agents get their own columns, after the user's column when reserveFirstColumn is on.
+// A column number past the last editor group makes VS Code add a group on the right,
+// so the user's existing layout is never rebuilt.
+function chooseColumn(key) {
   if (agentColumns.has(key)) return agentColumns.get(key);
-  const max = setting('maxColumns');
-  const num = Math.min(agentColumns.size + 1, max);
+  const offset = setting('reserveFirstColumn') ? 1 : 0;
+  const num = Math.min(agentColumns.size + 1, setting('maxColumns')) + offset;
   agentColumns.set(key, num);
-  if (num > layoutColumns && num > 1) {
-    try {
-      if (!previousLayout) previousLayout = await vscode.commands.executeCommand('vscode.getEditorLayout');
-      await vscode.commands.executeCommand('vscode.setEditorLayout', {
-        orientation: 0,
-        groups: Array.from({ length: num }, () => ({}))
-      });
-      layoutColumns = num;
-      log(`Editor layout expanded to ${num} columns.`);
-    } catch(e) { log('Could not change editor layout: ' + e.message); }
-  }
   return num;
 }
 function gitRange(folder, file) {
+  // Git can run commands from a repository's own config (e.g. core.fsmonitor),
+  // so it is never run in an untrusted workspace.
+  if (!vscode.workspace.isTrusted) return Promise.resolve(null);
   const relative = path.relative(folder.uri.fsPath, file);
   return new Promise(resolve => {
     execFile('git', ['-C',folder.uri.fsPath,'diff','--no-ext-diff','--unified=0','--',relative],
@@ -141,15 +153,25 @@ function captureRange(documentEvent) {
   const active = vscode.window.activeTextEditor;
   const userEditing = active && active.document.uri.toString() === documentEvent.document.uri.toString()
     && documentEvent.document.isDirty && Date.now()-lastClaudeActivity > 3000;
-  if (!userEditing) schedule(documentEvent.document.uri, 'text');
+  if (userEditing) userTypedAt.set(normalizePath(documentEvent.document.uri.fsPath), Date.now());
+  else schedule(documentEvent.document.uri, 'text');
 }
 function schedule(uri, from) {
-  if (!running || !setting('enabled') || ignored(uri)) return;
+  if (!isWatching() || ignored(uri)) return;
   const key = normalizePath(uri.fsPath);
+  // Saving a file the user has just typed in (including auto-save) is not agent activity.
+  const typed = userTypedAt.get(key);
+  if (from === 'file watcher' && typed && Date.now()-typed < USER_SAVE_WINDOW_MS && Date.now()-lastClaudeActivity > 3000) return;
   if (pending.has(key)) clearTimeout(pending.get(key));
-  const ms = setting('debounceMs') + (eventLogState.size ? 140 : 0);
+  const ms = setting('debounceMs') + (hooksActive() ? 140 : 0);
   pending.set(key, setTimeout(() => {
     pending.delete(key);
+    // Bulk changes such as a branch checkout would otherwise queue minutes of tab switching.
+    if (!queuedChanges.has(key) && queuedChanges.size >= MAX_QUEUE) {
+      const oldest = queuedChanges.keys().next().value;
+      queuedChanges.delete(oldest);
+      log(`Display queue full (${MAX_QUEUE} files); skipped ${oldest}.`);
+    }
     // A second write updates the existing queue item without pushing this file
     // to the end of the queue, so a build's rapid writes cannot monopolise focus.
     queuedChanges.set(key, {uri,from,agentKey:getAgentKey(uri.fsPath)});
@@ -157,7 +179,7 @@ function schedule(uri, from) {
   }, ms));
 }
 function requestDrain(delay = 0) {
-  if (draining || !running || !setting('enabled')) return;
+  if (draining || !isWatching()) return;
   if (displayTimer) clearTimeout(displayTimer);
   displayTimer = setTimeout(() => {
     displayTimer = null;
@@ -165,7 +187,7 @@ function requestDrain(delay = 0) {
   }, delay);
 }
 async function drainQueue() {
-  if (draining || !running || !setting('enabled')) return;
+  if (draining || !isWatching()) return;
   draining = true;
   let nextDelay = 0;
   try {
@@ -176,7 +198,7 @@ async function drainQueue() {
     let processed = false;
     for (const [file, item] of queuedChanges) {
       if (ignored(item.uri)) { queuedChanges.delete(file); continue; }
-      const column = await chooseColumn(item.agentKey);
+      const column = chooseColumn(item.agentKey);
       const isSameFile = currentFileByColumn.get(column) === file;
       const wait = (lastShownAtByColumn.get(column) || 0) + setting('minViewMs') - Date.now();
       if (!isSameFile && wait > 0) { soonestWait = Math.min(soonestWait, wait); continue; }
@@ -202,7 +224,7 @@ async function openChangedFile(uri, from, column, key) {
     if (stat.type !== vscode.FileType.File || stat.size > setting('maxFileSizeKb')*1024) return false;
     // File changes not confidently attributable still appear in a shared column.
     const folder = workspaceFor(uri.fsPath);
-    if (key === 'unattributed' && setting('ignoreUnattributedWhenHooksActive') && eventLogState.size) return false;
+    if (key === 'unattributed' && setting('ignoreUnattributedWhenHooksActive') && hooksActive()) return false;
     const wasOpen = isOpenAlready(uri);
     const doc = await vscode.workspace.openTextDocument(uri);
     const normalized = normalizePath(uri.fsPath);
@@ -214,13 +236,18 @@ async function openChangedFile(uri, from, column, key) {
     if (!range) range = { start: Math.max(0,doc.lineCount-1), end: Math.max(0,doc.lineCount-1) };
     range.start = Math.max(0, Math.min(range.start, doc.lineCount-1));
     range.end = Math.max(range.start, Math.min(range.end, doc.lineCount-1));
-    const sel = new vscode.Range(range.start,0,range.start,0);
-    const editor = await vscode.window.showTextDocument(doc, {
-      viewColumn: column, preview: false, preserveFocus: true, selection: sel
-    });
-    editor.revealRange(new vscode.Range(range.start, 0, range.end, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    // Never move the cursor or scroll position of the editor the user is working in.
+    const active = vscode.window.activeTextEditor;
+    const userIsHere = active && active.document.uri.toString() === uri.toString() && active.viewColumn === column;
+    const options = { viewColumn: column, preview: false, preserveFocus: true };
+    if (!userIsHere) options.selection = new vscode.Range(range.start,0,range.start,0);
+    const editor = await vscode.window.showTextDocument(doc, options);
+    if (!userIsHere) editor.revealRange(new vscode.Range(range.start, 0, range.end, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     if (!wasOpen) ownedFiles.add(uri.toString());
+    // Keep only the most recently shown files' text, oldest dropped first.
+    snapshots.delete(normalized);
     snapshots.set(normalized, text);
+    if (snapshots.size > MAX_SNAPSHOTS) snapshots.delete(snapshots.keys().next().value);
     highlight(editor, range);
     lastFileChanged = path.relative(folder.uri.fsPath, uri.fsPath);
     updateStatus();
@@ -274,9 +301,10 @@ async function pollHookEvents() {
   for (const folder of vscode.workspace.workspaceFolders || []) {
     const file = eventPath(folder);
     let state = eventLogState.get(file);
-    if (!state) { state = { offset: 0, remainder: '' }; eventLogState.set(file,state); }
+    if (!state) { state = { offset: 0, remainder: '', seen: false }; eventLogState.set(file,state); }
     try {
       const stat = await fs.promises.stat(file);
+      state.seen = true;
       if (stat.size < state.offset) { state.offset = 0; state.remainder = ''; }
       if (stat.size === state.offset) continue;
       const toRead = Math.min(stat.size-state.offset, 512*1024);
@@ -291,35 +319,92 @@ async function pollHookEvents() {
     } catch(e) { if (e.code !== 'ENOENT') log('Hook bridge error: '+e.message); }
   }
 }
+// Copy the hook script to a fixed location so installed hooks keep working after updates.
+function ensureHookScript() {
+  fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+  const source = fs.readFileSync(path.join(__dirname, 'hook.js'));
+  let current = null;
+  try { current = fs.readFileSync(HOOK_SCRIPT); } catch (_) {}
+  if (!current || !current.equals(source)) fs.writeFileSync(HOOK_SCRIPT, source, { mode: 0o600 });
+}
+function hookCommand(folder) {
+  return shellQuote(findExecutable('node') || 'node') + ' ' + shellQuote(HOOK_SCRIPT) + ' ' + shellQuote(eventPath(folder));
+}
+function claudeSettingsPath(folder) {
+  return path.join(folder.uri.fsPath, '.claude', 'settings.local.json');
+}
+async function readClaudeSettings(config) {
+  let settings = {};
+  try { settings = JSON.parse(await fs.promises.readFile(config, 'utf8')); }
+  catch (e) { if (e.code !== 'ENOENT') throw new Error(`Cannot read ${config}: ${e.message}`); }
+  if (!settings || Array.isArray(settings) || typeof settings !== 'object') throw new Error(`${config} is not a JSON object.`);
+  return settings;
+}
+// Projects with hooks installed are recorded so the uninstall script can remove them.
+async function recordProject(config, installed) {
+  let projects = [];
+  try { projects = JSON.parse(await fs.promises.readFile(PROJECTS_FILE, 'utf8')); } catch (_) {}
+  if (!Array.isArray(projects)) projects = [];
+  projects = projects.filter(p => p !== config);
+  if (installed) projects.push(config);
+  await fs.promises.mkdir(DATA_DIR, { recursive: true, mode: 0o700 });
+  await fs.promises.writeFile(PROJECTS_FILE, JSON.stringify(projects, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+}
+async function pickFolder(placeHolder) {
+  const folders = vscode.workspace.workspaceFolders || [];
+  if (!folders.length) { vscode.window.showWarningMessage('Open a workspace folder first.'); return null; }
+  if (folders.length === 1) return folders[0];
+  const picked = await vscode.window.showQuickPick(folders.map(f => ({label:f.name, folder:f})), {placeHolder});
+  return picked?.folder || null;
+}
 async function installHooks() {
   if (!vscode.workspace.isTrusted) return vscode.window.showWarningMessage('Trust this workspace before installing Claude Code hooks.');
-  const folders = vscode.workspace.workspaceFolders || [];
-  if (!folders.length) return vscode.window.showWarningMessage('Open a workspace folder first.');
-  const selected = folders.length === 1 ? folders[0] : await vscode.window.showQuickPick(folders.map(f => ({label:f.name, folder:f})), {placeHolder:'Choose Claude Code project'}).then(x=>x?.folder);
+  const selected = await pickFolder('Choose Claude Code project');
   if (!selected) return;
-  const config = path.join(selected.uri.fsPath,'.claude','settings.local.json');
-  let settings = {};
-  try { settings = JSON.parse(await fs.promises.readFile(config,'utf8')); }
-  catch(e) { if (e.code !== 'ENOENT') return vscode.window.showErrorMessage(`Cannot read ${config}: ${e.message}`); }
-  if (!settings || Array.isArray(settings) || typeof settings !== 'object') return vscode.window.showErrorMessage('Existing Claude settings are not a JSON object.');
-  const command = 'node ' + shellQuote(path.join(__dirname,'hook.js')) + ' ' + shellQuote(eventPath(selected));
-  const events = ['UserPromptSubmit','PreToolUse','PostToolUse','SubagentStart','SubagentStop','Stop'];
-  if (!settings.hooks) settings.hooks = {};
-  for (const event of events) {
-    const group = { hooks: [{ type: 'command', command, timeout: 5 }] };
-    if (event === 'PreToolUse' || event === 'PostToolUse') group.matcher = '.*';
-    const current = Array.isArray(settings.hooks[event]) ? settings.hooks[event] : [];
-    settings.hooks[event] = current.filter(g =>
-      !Array.isArray(g.hooks) || !g.hooks.some(h => typeof h.command === 'string' && h.command.includes('agent-live-view') && h.command.includes('hook.js')));
-    settings.hooks[event].push(group);
-  }
+  const config = claudeSettingsPath(selected);
   try {
+    const settings = await readClaudeSettings(config);
+    ensureHookScript();
+    addHookEntries(settings, hookCommand(selected));
     await fs.promises.mkdir(path.dirname(config),{recursive:true});
-    if (fs.existsSync(config)) await fs.promises.copyFile(config, config + '.agent-live-view.bak');
+    // Keep the first backup: later installs would otherwise overwrite the user's original settings.
+    const backup = config + '.agent-live-view.bak';
+    if (fs.existsSync(config) && !fs.existsSync(backup)) await fs.promises.copyFile(config, backup);
     await fs.promises.writeFile(config, JSON.stringify(settings,null,2)+'\n', 'utf8');
+    await recordProject(config, true);
     log('Installed hooks in '+config);
     vscode.window.showInformationMessage('Agent Live View hooks installed for this project. Restart the Claude Code conversation/session to load them.');
   } catch(e) { vscode.window.showErrorMessage('Hook installation failed: '+e.message); }
+}
+async function removeHooks() {
+  const selected = await pickFolder('Choose the project to remove hooks from');
+  if (!selected) return;
+  const config = claudeSettingsPath(selected);
+  try {
+    const settings = await readClaudeSettings(config);
+    if (!removeHookEntries(settings)) return vscode.window.showInformationMessage('No Agent Live View hooks are installed in this project.');
+    await fs.promises.writeFile(config, JSON.stringify(settings,null,2)+'\n', 'utf8');
+    await recordProject(config, false);
+    log('Removed hooks from '+config);
+    vscode.window.showInformationMessage('Agent Live View hooks removed. Restart the Claude Code conversation/session to apply.');
+  } catch(e) { vscode.window.showErrorMessage('Hook removal failed: '+e.message); }
+}
+// Hooks installed by an older version point at a script or event file that no longer
+// exists. Rewrite them to the current locations so Claude Code doesn't report hook errors.
+async function repairHooks() {
+  if (!vscode.workspace.isTrusted) return;
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    const config = claudeSettingsPath(folder);
+    try {
+      const settings = await readClaudeSettings(config);
+      const commands = ownHookCommands(settings);
+      if (!commands.length || commands.every(c => c.includes(HOOK_SCRIPT) && c.includes(eventPath(folder)))) continue;
+      addHookEntries(settings, hookCommand(folder));
+      await fs.promises.writeFile(config, JSON.stringify(settings,null,2)+'\n', 'utf8');
+      await recordProject(config, true);
+      log('Updated outdated hook paths in '+config);
+    } catch(e) { log('Could not check hooks in '+config+': '+e.message); }
+  }
 }
 // Edit the same glob list that is available in Settings (JSON). No extra config file
 // or restart is needed. Workspace-level overrides keep per-project ignores separate.
@@ -418,7 +503,8 @@ async function manageIncludes() {
 }
 
 function diagnostics() {
-  log(`Watching: ${running && setting('enabled')}; editor columns: ${layoutColumns}`);
+  log(`Watching: ${isWatching()}; editor groups: ${vscode.window.tabGroups.all.length}; first column reserved for you: ${setting('reserveFirstColumn')}`);
+  log(`Hook script: ${HOOK_SCRIPT} (${fs.existsSync(HOOK_SCRIPT) ? 'found' : 'not installed'}); hook events received: ${hooksActive()}`);
   log(`Minimum viewing time: ${setting('minViewMs')}ms; queued files: ${queuedChanges.size}; filter mode: ${setting('filterMode')}`);
   log(`Include patterns: ${JSON.stringify(setting('includeFiles'))}; exclude patterns: ${JSON.stringify(setting('excludeFiles'))}`);
   log(`Open tabs owned: ${ownedFiles.size}; agent keys: ${[...agentColumns.keys()].join(', ') || 'none'}`);
@@ -446,6 +532,12 @@ function activate(context) {
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(captureRange));
   // Apply changed glob settings immediately, including to already queued edits.
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+    if (event.affectsConfiguration('agentLiveView.enabled')) updateStatus();
+    if (event.affectsConfiguration('agentLiveView.reserveFirstColumn') || event.affectsConfiguration('agentLiveView.maxColumns')) {
+      agentColumns.clear();
+      lastShownAtByColumn.clear();
+      currentFileByColumn.clear();
+    }
     if (!event.affectsConfiguration('agentLiveView.excludeFiles') &&
         !event.affectsConfiguration('agentLiveView.excludeFolders') &&
         !event.affectsConfiguration('agentLiveView.includeFiles') &&
@@ -473,6 +565,7 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('agentLiveView.manageExclusions',manageExclusions));
   context.subscriptions.push(vscode.commands.registerCommand('agentLiveView.manageIncludes',manageIncludes));
   context.subscriptions.push(vscode.commands.registerCommand('agentLiveView.installHooks',installHooks));
+  context.subscriptions.push(vscode.commands.registerCommand('agentLiveView.removeHooks',removeHooks));
   context.subscriptions.push(vscode.commands.registerCommand('agentLiveView.clear',closeOwnedTabs));
   context.subscriptions.push(vscode.commands.registerCommand('agentLiveView.viewingPace', async () => {
     const choices = [
@@ -491,6 +584,9 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('agentLiveView.diagnostics',diagnostics));
   const interval = setInterval(() => pollHookEvents().catch(e=>log(e.message)),180);
   context.subscriptions.push({dispose:()=>clearInterval(interval)});
+  try { ensureHookScript(); } catch(e) { log('Could not update hook script: '+e.message); }
+  repairHooks().catch(e => log('Hook check failed: '+e.message));
+  context.subscriptions.push(vscode.workspace.onDidGrantWorkspaceTrust(() => repairHooks().catch(e => log('Hook check failed: '+e.message))));
   log('Watching allowed source files. Use Manage Included Patterns to opt specific JSON files into the live view.');
 }
 function deactivate() {

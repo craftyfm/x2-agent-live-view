@@ -102,3 +102,46 @@ test('legacy exclude-only mode ignores allowlist but respects exclusions', () =>
 test('empty allowlist in include-only mode opens no files', () => {
   assert.equal(h.isAllowedByFilePatterns('src/App.tsx','includeOnly',[],[]),false);
 });
+
+test('brace patterns match any listed alternative', () => {
+  assert.equal(h.matchesExcludedFile('src/App.tsx', ['**/*.{ts,tsx}']), true);
+  assert.equal(h.matchesExcludedFile('src/app.ts', ['**/*.{ts,tsx}']), true);
+  assert.equal(h.matchesExcludedFile('src/app.js', ['**/*.{ts,tsx}']), false);
+  assert.equal(h.matchesExcludedFile('a{b.txt', ['a{b.txt']), true, 'unclosed brace is literal');
+});
+
+test('hook entries are added once and replace older copies', () => {
+  const settings = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo other' }] }] } };
+  h.addHookEntries(settings, 'node "/old/agent-live-view-0.4.0/src/hook.js" "/tmp/x.jsonl"');
+  h.addHookEntries(settings, 'node "/home/u/.agent-live-view/hook.js" "/home/u/.agent-live-view/events/x.jsonl"');
+  for (const event of h.HOOK_EVENTS) {
+    const own = settings.hooks[event].filter(g => g.hooks.some(x => h.isOwnHookCommand(x.command)));
+    assert.equal(own.length, 1, event);
+    assert.match(own[0].hooks[0].command, /\.agent-live-view\/hook\.js/);
+  }
+  assert.equal(settings.hooks.Stop[0].hooks[0].command, 'echo other', 'other hooks are kept');
+  assert.equal(settings.hooks.PreToolUse[0].matcher, '.*');
+});
+
+test('removing hook entries keeps other hooks and drops empty sections', () => {
+  const settings = { permissions: {}, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo other' }] }] } };
+  h.addHookEntries(settings, 'node "/home/u/.agent-live-view/hook.js" "e.jsonl"');
+  assert.equal(h.removeHookEntries(settings), true);
+  assert.deepEqual(settings, { permissions: {}, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo other' }] }] } });
+  const onlyOwn = {};
+  h.addHookEntries(onlyOwn, 'node "/home/u/.agent-live-view/hook.js" "e.jsonl"');
+  h.removeHookEntries(onlyOwn);
+  assert.deepEqual(onlyOwn, {});
+  assert.equal(h.removeHookEntries({}), false);
+});
+
+test('ownHookCommands lists only this extension\'s hooks', () => {
+  const settings = { hooks: { Stop: [{ hooks: [{ command: 'echo other' }, { command: 'node "/x/agent-live-view/hook.js"' }] }] } };
+  assert.deepEqual(h.ownHookCommands(settings), ['node "/x/agent-live-view/hook.js"']);
+});
+
+test('findExecutable searches PATH', () => {
+  const found = h.findExecutable('node', process.env);
+  assert.ok(found && require('path').isAbsolute(found));
+  assert.equal(h.findExecutable('definitely-not-a-real-binary-xyz', { PATH: '/usr/bin' }, 'linux'), null);
+});

@@ -23,7 +23,7 @@ process.stdin.on('end', () => {
       toolId: input.tool_use_id || null,
       file: ti.file_path || ti.path || input.file_path || null
     };
-    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.mkdirSync(path.dirname(output), { recursive: true, mode: 0o700 });
     try { if (fs.statSync(output).size > 4 * 1024 * 1024) fs.truncateSync(output, 0); } catch (_) {}
     fs.appendFileSync(output, JSON.stringify(event) + '\n', { encoding: 'utf8', mode: 0o600 });
   } catch (_) { /* Diagnostics are best-effort; never interfere with agent tools. */ }
