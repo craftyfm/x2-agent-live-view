@@ -92,6 +92,22 @@ function isAllowedByFilePatterns(relativePath, filterMode, includeFiles, exclude
   return matchesExcludedFile(relativePath, includeFiles);
 }
 
+// Choose the editor column for an agent that has no column yet.
+// groups: [{ column, isChat }] for the current editor groups. Columns holding an AI chat
+// panel are never used, and with reserveFirst the first other column is left to the user.
+// otherColumns: columns already given to other agents, in the order they were given.
+// A column past the last group makes VS Code add a new group.
+function pickAgentColumn(groups, { reserveFirst, maxColumns, otherColumns }) {
+  const taken = [...new Set(otherColumns)];
+  if (taken.length >= maxColumns) return taken[taken.length - 1];
+  const usable = groups.filter(g => !g.isChat).map(g => g.column).sort((a, b) => a - b);
+  if (reserveFirst) usable.shift();
+  const last = groups.reduce((max, g) => Math.max(max, g.column), 0);
+  const candidates = [...usable];
+  for (let i = 1; i <= maxColumns; i++) candidates.push(last + i);
+  return candidates.find(c => !taken.includes(c));
+}
+
 // Claude Code hook events used for agent attribution and editing-round boundaries.
 const HOOK_EVENTS = ['UserPromptSubmit','PreToolUse','PostToolUse','SubagentStart','SubagentStop','Stop'];
 
@@ -156,5 +172,5 @@ function findExecutable(name, env = process.env, platform = process.platform) {
 
 module.exports = {
   lineDifference, normalizePath, safeFilePath, isInsideWorkspace, shellQuote, matchesExcludedFile, isAllowedByFilePatterns,
-  HOOK_EVENTS, isOwnHookCommand, removeHookEntries, addHookEntries, ownHookCommands, findExecutable
+  pickAgentColumn, HOOK_EVENTS, isOwnHookCommand, removeHookEntries, addHookEntries, ownHookCommands, findExecutable
 };

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- Agent files no longer open in the column holding the Claude Code chat when the chat is opened in the editor area. The chat can be on either side; agent files get a column of their own. If the chat is moved later, agents move out of its column.
+- New setting `agentLiveView.chatViewTypes` lists the panels whose columns are left alone.
+
 ## 0.5.0
 
 First Marketplace release (preview).

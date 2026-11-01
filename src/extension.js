@@ -6,7 +6,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const {
-  lineDifference, normalizePath, safeFilePath, isInsideWorkspace, shellQuote, isAllowedByFilePatterns,
+  lineDifference, normalizePath, safeFilePath, isInsideWorkspace, shellQuote, isAllowedByFilePatterns, pickAgentColumn,
   addHookEntries, removeHookEntries, ownHookCommands, findExecutable
 } = require('./helpers');
 
@@ -112,15 +112,38 @@ function getAgentKey(file) {
   const recentlyActive = [...recentAgents.entries()].filter(([,v]) => now-v < 1800).map(([k]) => k);
   return recentlyActive.length === 1 ? recentlyActive[0] : 'unattributed';
 }
-// Agents get their own columns, after the user's column when reserveFirstColumn is on.
-// A column number past the last editor group makes VS Code add a group on the right,
-// so the user's existing layout is never rebuilt.
+// True for a tab showing an AI chat panel, such as the Claude Code chat opened in the editor area.
+function isChatTab(tab) {
+  if (!(tab.input instanceof vscode.TabInputWebview)) return false;
+  return (setting('chatViewTypes') || []).some(type => type && tab.input.viewType.includes(type));
+}
+function editorGroups() {
+  return vscode.window.tabGroups.all.map(g => ({ column: g.viewColumn, isChat: g.tabs.some(isChatTab) }));
+}
+// Agents get their own columns, never one holding a chat panel, and after the user's
+// column when reserveFirstColumn is on. A column number past the last editor group makes
+// VS Code add a group, so the user's existing layout is never rebuilt.
 function chooseColumn(key) {
-  if (agentColumns.has(key)) return agentColumns.get(key);
-  const offset = setting('reserveFirstColumn') ? 1 : 0;
-  const num = Math.min(agentColumns.size + 1, setting('maxColumns')) + offset;
-  agentColumns.set(key, num);
-  return num;
+  const groups = editorGroups();
+  const chatColumns = new Set(groups.filter(g => g.isChat).map(g => g.column));
+  const current = agentColumns.get(key);
+  // The chat panel may have been moved into this agent's column since it was chosen.
+  if (current && !chatColumns.has(current)) return current;
+  const column = pickAgentColumn(groups, {
+    reserveFirst: setting('reserveFirstColumn'),
+    maxColumns: setting('maxColumns'),
+    otherColumns: [...agentColumns].filter(([k]) => k !== key).map(([, c]) => c)
+  });
+  agentColumns.delete(key);
+  agentColumns.set(key, column);
+  return column;
+}
+// VS Code adds at most one group for a column past the last one, so the column an
+// editor actually opened in can differ from the one asked for.
+function recordActualColumn(key, column) {
+  if (agentColumns.get(key) === column) return;
+  for (const [other, c] of agentColumns) if (other !== key && c === column) agentColumns.delete(other);
+  agentColumns.set(key, column);
 }
 function gitRange(folder, file) {
   // Git can run commands from a repository's own config (e.g. core.fsmonitor),
@@ -211,10 +234,11 @@ async function drainQueue() {
       const wait = (lastShownAtByColumn.get(column) || 0) + setting('minViewMs') - Date.now();
       if (!isSameFile && wait > 0) { soonestWait = Math.min(soonestWait, wait); continue; }
       queuedChanges.delete(file);
-      const opened = await openChangedFile(item.uri, item.from, column, item.agentKey);
-      if (opened) {
-        if (!isSameFile) lastShownAtByColumn.set(column, Date.now());
-        currentFileByColumn.set(column, file);
+      const openedIn = await openChangedFile(item.uri, item.from, column, item.agentKey);
+      if (openedIn) {
+        recordActualColumn(item.agentKey, openedIn);
+        if (!isSameFile || openedIn !== column) lastShownAtByColumn.set(openedIn, Date.now());
+        currentFileByColumn.set(openedIn, file);
       }
       processed = true;
       break;
@@ -226,13 +250,13 @@ async function drainQueue() {
   }
 }
 async function openChangedFile(uri, from, column, key) {
-  if (!running || ignored(uri)) return false;
+  if (!running || ignored(uri)) return 0;
   try {
     const stat = await vscode.workspace.fs.stat(uri);
-    if (stat.type !== vscode.FileType.File || stat.size > setting('maxFileSizeKb')*1024) return false;
+    if (stat.type !== vscode.FileType.File || stat.size > setting('maxFileSizeKb')*1024) return 0;
     // File changes not confidently attributable still appear in a shared column.
     const folder = workspaceFor(uri.fsPath);
-    if (key === 'unattributed' && setting('ignoreUnattributedWhenHooksActive') && hooksActive()) return false;
+    if (key === 'unattributed' && setting('ignoreUnattributedWhenHooksActive') && hooksActive()) return 0;
     const wasOpen = isOpenAlready(uri);
     const doc = await vscode.workspace.openTextDocument(uri);
     const normalized = normalizePath(uri.fsPath);
@@ -259,9 +283,9 @@ async function openChangedFile(uri, from, column, key) {
     highlight(editor, range);
     lastFileChanged = path.relative(folder.uri.fsPath, uri.fsPath);
     updateStatus();
-    log(`Opened ${lastFileChanged} in column ${column} (${key}, source: ${from}).`);
-    return true;
-  } catch(e) { lastFileError = `${uri.fsPath}: ${e.message}`; log('Skipped ' + lastFileError); return false; }
+    log(`Opened ${lastFileChanged} in column ${editor.viewColumn} (${key}, source: ${from}).`);
+    return editor.viewColumn || column;
+  } catch(e) { lastFileError = `${uri.fsPath}: ${e.message}`; log('Skipped ' + lastFileError); return 0; }
 }
 function highlight(editor, range) {
   const ms = setting('highlightDurationMs');
@@ -542,7 +566,8 @@ function activate(context) {
   // Apply changed glob settings immediately, including to already queued edits.
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
     if (event.affectsConfiguration('agentLiveView.enabled')) updateStatus();
-    if (event.affectsConfiguration('agentLiveView.reserveFirstColumn') || event.affectsConfiguration('agentLiveView.maxColumns')) {
+    if (event.affectsConfiguration('agentLiveView.reserveFirstColumn') || event.affectsConfiguration('agentLiveView.maxColumns') ||
+        event.affectsConfiguration('agentLiveView.chatViewTypes')) {
       agentColumns.clear();
       lastShownAtByColumn.clear();
       currentFileByColumn.clear();
