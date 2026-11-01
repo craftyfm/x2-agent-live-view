@@ -145,3 +145,10 @@ test('findExecutable searches PATH', () => {
   assert.ok(found && require('path').isAbsolute(found));
   assert.equal(h.findExecutable('definitely-not-a-real-binary-xyz', { PATH: '/usr/bin' }, 'linux'), null);
 });
+
+test('pathological patterns stay fast', () => {
+  const start = Date.now();
+  h.matchesExcludedFile('a/'.repeat(40) + 'b'.repeat(200), ['**/**/**/**/**/**/**/**/**/**/**/*.nope', '{a,a,a}{a,a,a}{a,a,a}{a,a,a}/' + '*'.repeat(30) + 'z']);
+  assert.ok(Date.now() - start < 500);
+  assert.equal(h.matchesExcludedFile('x.js', ['x'.repeat(400)]), false);
+});

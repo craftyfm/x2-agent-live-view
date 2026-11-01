@@ -149,23 +149,31 @@ function captureRange(documentEvent) {
   const end = Math.max(...ranges.map(r=>r.end));
   recentTextRanges.set(normalizePath(documentEvent.document.uri.fsPath), {start,end,at:Date.now()});
   // In-memory edits made by the Claude extension need to be followed too.
-  // Skip active editor's dirty changes when no recent Claude tool activity, to avoid following user's typing.
-  const active = vscode.window.activeTextEditor;
-  const userEditing = active && active.document.uri.toString() === documentEvent.document.uri.toString()
-    && documentEvent.document.isDirty && Date.now()-lastClaudeActivity > 3000;
-  if (userEditing) userTypedAt.set(normalizePath(documentEvent.document.uri.fsPath), Date.now());
-  else schedule(documentEvent.document.uri, 'text');
+  // The user's own typing is filtered out when the debounce timer fires (see userRecentlyTyped).
+  schedule(documentEvent.document.uri, 'text');
+}
+// Keyboard selection changes mark a file as being worked on by the user. Document
+// change events can't be used for this: VS Code fires them before the editor is
+// marked dirty, and the keyboard selection event follows within milliseconds.
+function noteUserSelection(event) {
+  if (event.kind !== vscode.TextEditorSelectionChangeKind.Keyboard) return;
+  if (event.textEditor.document.uri.scheme !== 'file') return;
+  userTypedAt.set(normalizePath(event.textEditor.document.uri.fsPath), Date.now());
+}
+// Changes to, and saves of (including auto-save), a file the user is typing in are
+// not agent activity, unless a Claude Code hook reported a tool call just now.
+function userRecentlyTyped(key) {
+  const typed = userTypedAt.get(key);
+  return Boolean(typed) && Date.now()-typed < USER_SAVE_WINDOW_MS && Date.now()-lastClaudeActivity > 3000;
 }
 function schedule(uri, from) {
   if (!isWatching() || ignored(uri)) return;
   const key = normalizePath(uri.fsPath);
-  // Saving a file the user has just typed in (including auto-save) is not agent activity.
-  const typed = userTypedAt.get(key);
-  if (from === 'file watcher' && typed && Date.now()-typed < USER_SAVE_WINDOW_MS && Date.now()-lastClaudeActivity > 3000) return;
   if (pending.has(key)) clearTimeout(pending.get(key));
   const ms = setting('debounceMs') + (hooksActive() ? 140 : 0);
   pending.set(key, setTimeout(() => {
     pending.delete(key);
+    if (userRecentlyTyped(key)) return;
     // Bulk changes such as a branch checkout would otherwise queue minutes of tab switching.
     if (!queuedChanges.has(key) && queuedChanges.size >= MAX_QUEUE) {
       const oldest = queuedChanges.keys().next().value;
@@ -530,6 +538,7 @@ function activate(context) {
   watcher.onDidCreate(uri => schedule(uri,'new file'),null,context.subscriptions);
   context.subscriptions.push(watcher);
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(captureRange));
+  context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection(noteUserSelection));
   // Apply changed glob settings immediately, including to already queued edits.
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
     if (event.affectsConfiguration('agentLiveView.enabled')) updateStatus();

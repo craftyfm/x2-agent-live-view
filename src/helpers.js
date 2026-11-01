@@ -43,6 +43,10 @@ const caseInsensitive = process.platform === 'win32' || process.platform === 'da
 function globToRegExp(raw, literalBraces = false) {
   let glob = raw.trim().replace(/\\/g, '/').replace(/^\.\//, '');
   if (!glob.includes('/')) glob = '**/' + glob;
+  // Repeated **/ segments and very long patterns can make the expression slow to evaluate.
+  glob = glob.replace(/(\*\*\/)+/g, '**/');
+  glob = glob.replace(/\*{3,}/g, '**');
+  if (glob.length > 300) return /(?!)/;
   let source = '^';
   let braceDepth = 0;
   for (let i = 0; i < glob.length; i++) {
