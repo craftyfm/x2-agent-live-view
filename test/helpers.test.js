@@ -152,3 +152,26 @@ test('pathological patterns stay fast', () => {
   assert.ok(Date.now() - start < 500);
   assert.equal(h.matchesExcludedFile('x.js', ['x'.repeat(400)]), false);
 });
+
+test('agent columns skip a chat panel on the right', () => {
+  const groups = [{ column: 1, isChat: false }, { column: 2, isChat: true }];
+  const opts = { reserveFirst: true, maxColumns: 3 };
+  assert.equal(h.pickAgentColumn(groups, { ...opts, otherColumns: [] }), 3);
+  assert.equal(h.pickAgentColumn(groups, { ...opts, otherColumns: [3] }), 4);
+});
+
+test('agent columns skip a chat panel on the left and keep the user column', () => {
+  const groups = [{ column: 1, isChat: true }, { column: 2, isChat: false }, { column: 3, isChat: false }];
+  assert.equal(h.pickAgentColumn(groups, { reserveFirst: true, maxColumns: 3, otherColumns: [] }), 3);
+  assert.equal(h.pickAgentColumn(groups, { reserveFirst: false, maxColumns: 3, otherColumns: [] }), 2);
+});
+
+test('agent columns without a chat panel', () => {
+  assert.equal(h.pickAgentColumn([{ column: 1, isChat: false }], { reserveFirst: true, maxColumns: 3, otherColumns: [] }), 2);
+  assert.equal(h.pickAgentColumn([], { reserveFirst: true, maxColumns: 3, otherColumns: [] }), 1);
+});
+
+test('agents share the last column once maxColumns is reached', () => {
+  const groups = [{ column: 1, isChat: false }, { column: 2, isChat: false }, { column: 3, isChat: false }];
+  assert.equal(h.pickAgentColumn(groups, { reserveFirst: true, maxColumns: 2, otherColumns: [2, 3] }), 3);
+});

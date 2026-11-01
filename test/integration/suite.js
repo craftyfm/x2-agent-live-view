@@ -45,4 +45,22 @@ exports.run = async () => {
   assert.deepEqual([cursor.line, cursor.character], [10, 8], 'cursor moved after an agent change');
 
   assert.ok(fs.existsSync(path.join(os.homedir(), '.agent-live-view', 'hook.js')), 'hook script not copied');
+
+  // A chat panel in the editor area (here on the right, in column 2) is left on its own:
+  // agent files go to a new column instead, even though column 2 was the agent's column before.
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  await vscode.window.showTextDocument(vscode.Uri.file(aPath), { viewColumn: 1 });
+  const chat = vscode.window.createWebviewPanel('claudeVSCodePanel', 'Claude Code', { viewColumn: 2, preserveFocus: true });
+  await vscode.window.showTextDocument(vscode.Uri.file(aPath), { viewColumn: 1 });
+  await sleep(500);
+  lines[5] = 'const third = true;';
+  fs.writeFileSync(bPath, lines.join('\n'));
+  await sleep(2500);
+  const chatGroup = vscode.window.tabGroups.all.find(g => g.tabs.some(t => t.input instanceof vscode.TabInputWebview));
+  assert.equal(chatGroup.viewColumn, 2, 'chat panel moved');
+  assert.deepEqual(chatGroup.tabs.map(t => t.label), ['Claude Code'], 'a file was opened in the chat column');
+  const agentGroup = vscode.window.tabGroups.all.find(g => g.tabs.some(t => t.input?.uri?.fsPath === bPath));
+  assert.equal(agentGroup?.viewColumn, 3, 'agent file not opened in a column of its own');
+  assert.equal(vscode.window.activeTextEditor.document.uri.fsPath, aPath, 'focus moved away from the user\'s editor');
+  chat.dispose();
 };

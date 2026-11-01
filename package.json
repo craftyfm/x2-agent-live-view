@@ -2,7 +2,7 @@
   "name": "agent-live-view",
   "displayName": "Agent Live View",
   "description": "Follow AI coding agents as they work: changed files open in their own editor columns with the edited lines highlighted. Works with Claude Code.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "x2network",
   "license": "MIT",
   "private": true,
@@ -96,7 +96,17 @@
         "agentLiveView.reserveFirstColumn": {
           "type": "boolean",
           "default": true,
-          "description": "Keep the first editor column for your own work. Agent files open in the columns to its right."
+          "description": "Keep the first editor column (not counting a chat panel) for your own work. Agent files open in other columns."
+        },
+        "agentLiveView.chatViewTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "claudeVSCodePanel"
+          ],
+          "description": "Editor columns holding a panel of these types are never used for agent files, so a chat opened in the editor area stays on its own. The default covers the Claude Code chat."
         },
         "agentLiveView.maxColumns": {
           "type": "integer",

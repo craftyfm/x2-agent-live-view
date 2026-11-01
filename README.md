@@ -4,7 +4,7 @@
 
 See what your AI coding agent is changing while it works. When Claude Code (or any other tool) edits a file in your workspace, Agent Live View opens that file in a separate editor column, scrolls to the change and briefly highlights the edited lines in green.
 
-Your own editor stays where it is. Agent files open in the columns to its right, and your cursor and scroll position are never moved.
+Your own editor stays where it is, and so does the Claude Code chat if you have it open in the editor area. Agent files open in a column of their own, and your cursor and scroll position are never moved.
 
 > **Preview release.** Agent Live View is under active development. Please report problems on [GitHub](https://github.com/craftyfm/x2-agent-live-view/issues).
 
@@ -20,7 +20,7 @@ Your own editor stays where it is. Agent files open in the columns to its right,
 
 1. Install the extension and open a project folder.
 2. Check that the status bar shows **Live View: ON**. Click it to pause or resume.
-3. Ask Claude Code to change some source files. Each changed file opens in the column to the right of your editor.
+3. Ask Claude Code to change some source files. Each changed file opens in a separate column, never in your editor's column or the chat's column.
 
 That is all you need for basic use. To get a column per agent and automatic tab clean-up, install the Claude Code hooks below.
 
@@ -67,7 +67,8 @@ Set `agentLiveView.filterMode` to `"excludeOnly"` to show every file except excl
 | Setting | Default | Description |
 | --- | --- | --- |
 | `agentLiveView.enabled` | `true` | Open changed files automatically. |
-| `agentLiveView.reserveFirstColumn` | `true` | Keep the first editor column for your own work. Agent files open to its right. |
+| `agentLiveView.reserveFirstColumn` | `true` | Keep the first editor column (not counting a chat panel) for your own work. |
+| `agentLiveView.chatViewTypes` | `["claudeVSCodePanel"]` | Columns holding these panels are never used for agent files. The default covers the Claude Code chat. |
 | `agentLiveView.maxColumns` | `3` | Maximum number of editor columns used for agents. |
 | `agentLiveView.minViewMs` | `4000` | Minimum time a file stays in front before another file replaces it in the same column. |
 | `agentLiveView.highlightDurationMs` | `6000` | How long edited lines stay highlighted. `0` turns highlighting off. |
@@ -94,7 +95,6 @@ Set `agentLiveView.filterMode` to `"excludeOnly"` to show every file except excl
 
 - Without hooks, changes made by other programs (formatters, `git checkout`, build tools) also appear. Your own saves in files you have just typed in are ignored. At most 25 files wait to be shown; when more change at once, the oldest are skipped.
 - The first edit to a file that is not tracked by git may scroll to the end of the file instead of to the change. Later edits are located exactly.
-- Keep the Claude Code chat in the sidebar rather than in an editor column, so agent files do not cover it.
 - Changes in a git worktree outside the open workspace are not seen. Add the worktree as a workspace folder to follow it.
 - Agent Live View closes only tabs that it opened, and never closes pinned or unsaved tabs.
 - In untrusted workspaces, git is not used to find changed lines, hooks cannot be installed and the workspace's own pattern settings are ignored.
