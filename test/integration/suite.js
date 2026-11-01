@@ -46,21 +46,49 @@ exports.run = async () => {
 
   assert.ok(fs.existsSync(path.join(os.homedir(), '.agent-live-view', 'hook.js')), 'hook script not copied');
 
-  // A chat panel in the editor area (here on the right, in column 2) is left on its own:
-  // agent files go to a new column instead, even though column 2 was the agent's column before.
+  // A chat panel in the editor area, on the right in column 2, is left on its own:
+  // a new agent column is added between the user's editor and the chat.
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   await vscode.window.showTextDocument(vscode.Uri.file(aPath), { viewColumn: 1 });
-  const chat = vscode.window.createWebviewPanel('claudeVSCodePanel', 'Claude Code', { viewColumn: 2, preserveFocus: true });
+  let chat = vscode.window.createWebviewPanel('claudeVSCodePanel', 'Claude Code', { viewColumn: 2, preserveFocus: true });
   await vscode.window.showTextDocument(vscode.Uri.file(aPath), { viewColumn: 1 });
   await sleep(500);
   lines[5] = 'const third = true;';
   fs.writeFileSync(bPath, lines.join('\n'));
   await sleep(2500);
-  const chatGroup = vscode.window.tabGroups.all.find(g => g.tabs.some(t => t.input instanceof vscode.TabInputWebview));
-  assert.equal(chatGroup.viewColumn, 2, 'chat panel moved');
-  assert.deepEqual(chatGroup.tabs.map(t => t.label), ['Claude Code'], 'a file was opened in the chat column');
-  const agentGroup = vscode.window.tabGroups.all.find(g => g.tabs.some(t => t.input?.uri?.fsPath === bPath));
-  assert.equal(agentGroup?.viewColumn, 3, 'agent file not opened in a column of its own');
-  assert.equal(vscode.window.activeTextEditor.document.uri.fsPath, aPath, 'focus moved away from the user\'s editor');
+  const chatGroup = () => vscode.window.tabGroups.all.find(g => g.tabs.some(t => t.input instanceof vscode.TabInputWebview));
+  const columnOf = file => vscode.window.tabGroups.all.find(g => g.tabs.some(t => t.input?.uri?.fsPath === file))?.viewColumn;
+  assert.deepEqual(chatGroup().tabs.map(t => t.label), ['Claude Code'], 'a file was opened in the chat column');
+  assert.equal(columnOf(bPath), 2, 'agent column not added beside the chat');
+  assert.equal(chatGroup().viewColumn, 3, 'chat is not to the right of the agent column');
+  assert.equal(vscode.window.activeTextEditor?.document.uri.fsPath, aPath, 'focus not returned to the user\'s editor');
+  assert.equal(vscode.window.tabGroups.activeTabGroup.viewColumn, 1, 'focus not returned to column 1');
+  chat.dispose();
+
+  // Same layout, but the user is typing in the chat: focus goes back to the chat.
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  await vscode.window.showTextDocument(vscode.Uri.file(aPath), { viewColumn: 1 });
+  chat = vscode.window.createWebviewPanel('claudeVSCodePanel', 'Claude Code', { viewColumn: 2, preserveFocus: false });
+  await sleep(500);
+  lines[6] = 'const fourth = true;';
+  fs.writeFileSync(bPath, lines.join('\n'));
+  await sleep(2500);
+  assert.equal(columnOf(bPath), 2, 'agent column not added beside the chat when the chat had focus');
+  assert.equal(chatGroup().viewColumn, 3, 'chat moved to the wrong place');
+  assert.equal(vscode.window.tabGroups.activeTabGroup.viewColumn, 3, 'focus not returned to the chat');
+  chat.dispose();
+
+  // Chat on the left of the user's editor: the agent column goes between them, right of the chat.
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  chat = vscode.window.createWebviewPanel('claudeVSCodePanel', 'Claude Code', { viewColumn: 1, preserveFocus: true });
+  await vscode.window.showTextDocument(vscode.Uri.file(aPath), { viewColumn: 2 });
+  await sleep(500);
+  lines[7] = 'const fifth = true;';
+  fs.writeFileSync(bPath, lines.join('\n'));
+  await sleep(2500);
+  assert.equal(chatGroup().viewColumn, 1, 'chat moved');
+  assert.equal(columnOf(bPath), 2, 'agent column not added between the chat and the editor');
+  assert.equal(columnOf(aPath), 3, 'user\'s editor not to the right of the agent column');
+  assert.equal(vscode.window.activeTextEditor?.document.uri.fsPath, aPath, 'focus not returned to the user\'s editor');
   chat.dispose();
 };

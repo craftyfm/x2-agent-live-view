@@ -123,20 +123,68 @@ function editorGroups() {
 // Agents get their own columns, never one holding a chat panel, and after the user's
 // column when reserveFirstColumn is on. A column number past the last editor group makes
 // VS Code add a group, so the user's existing layout is never rebuilt.
-function chooseColumn(key) {
+async function chooseColumn(key) {
   const groups = editorGroups();
   const chatColumns = new Set(groups.filter(g => g.isChat).map(g => g.column));
   const current = agentColumns.get(key);
-  // The chat panel may have been moved into this agent's column since it was chosen.
-  if (current && !chatColumns.has(current)) return current;
-  const column = pickAgentColumn(groups, {
+  // The layout may have changed since this agent's column was chosen: the column may be
+  // gone, or now hold the chat or the user's editor.
+  const userColumn = setting('reserveFirstColumn') ? Math.min(...groups.filter(g => !g.isChat).map(g => g.column)) : 0;
+  if (current && groups.some(g => g.column === current) && !chatColumns.has(current) && current !== userColumn) return current;
+  let column = pickAgentColumn(groups, {
     reserveFirst: setting('reserveFirstColumn'),
     maxColumns: setting('maxColumns'),
     otherColumns: [...agentColumns].filter(([k]) => k !== key).map(([, c]) => c)
   });
+  const last = groups.reduce((max, g) => Math.max(max, g.column), 0);
+  if (column > last && chatColumns.size && setting('newColumnPosition') === 'besideChat') {
+    column = (await addColumnBesideChat(groups)) || column;
+  }
   agentColumns.delete(key);
   agentColumns.set(key, column);
   return column;
+}
+const FOCUS_GROUP_COMMANDS = ['First','Second','Third','Fourth','Fifth','Sixth','Seventh','Eighth']
+  .map(n => `workbench.action.focus${n}EditorGroup`);
+// Add an editor group next to the chat, on the side facing the user's editor, and
+// return its column. VS Code can only add a group beside the active group, and doing
+// so moves keyboard focus, so focus is put back on the group that had it.
+async function addColumnBesideChat(groups) {
+  const chat = groups.find(g => g.isChat).column;
+  const editor = groups.find(g => !g.isChat);
+  const left = !editor || editor.column < chat;
+  const previous = vscode.window.tabGroups.activeTabGroup.viewColumn;
+  try {
+    // The group on the editor side of the chat can add the column too, without touching the chat.
+    const neighbour = left ? chat - 1 : chat + 1;
+    if (previous === neighbour) {
+      await vscode.commands.executeCommand(left ? 'workbench.action.newGroupRight' : 'workbench.action.newGroupLeft');
+    } else {
+      if (previous !== chat) {
+        if (chat > FOCUS_GROUP_COMMANDS.length) return 0;
+        await vscode.commands.executeCommand(FOCUS_GROUP_COMMANDS[chat - 1]);
+      }
+      await vscode.commands.executeCommand(left ? 'workbench.action.newGroupLeft' : 'workbench.action.newGroupRight');
+    }
+    const added = left ? chat : chat + 1;
+    // Groups at or after the new column moved one place to the right.
+    const shift = c => c >= added ? c + 1 : c;
+    for (const [k, c] of agentColumns) agentColumns.set(k, shift(c));
+    for (const map of [lastShownAtByColumn, currentFileByColumn]) {
+      const entries = [...map].map(([c, v]) => [shift(c), v]);
+      map.clear();
+      for (const [c, v] of entries) map.set(c, v);
+    }
+    const restore = shift(previous);
+    if (vscode.window.tabGroups.activeTabGroup.viewColumn !== restore && restore <= FOCUS_GROUP_COMMANDS.length) {
+      await vscode.commands.executeCommand(FOCUS_GROUP_COMMANDS[restore - 1]);
+    }
+    log(`Added column ${added} beside the chat.`);
+    return added;
+  } catch (e) {
+    log('Could not add a column beside the chat: ' + e.message);
+    return 0;
+  }
 }
 // VS Code adds at most one group for a column past the last one, so the column an
 // editor actually opened in can differ from the one asked for.
@@ -229,7 +277,7 @@ async function drainQueue() {
     let processed = false;
     for (const [file, item] of queuedChanges) {
       if (ignored(item.uri)) { queuedChanges.delete(file); continue; }
-      const column = chooseColumn(item.agentKey);
+      const column = await chooseColumn(item.agentKey);
       const isSameFile = currentFileByColumn.get(column) === file;
       const wait = (lastShownAtByColumn.get(column) || 0) + setting('minViewMs') - Date.now();
       if (!isSameFile && wait > 0) { soonestWait = Math.min(soonestWait, wait); continue; }
@@ -567,7 +615,7 @@ function activate(context) {
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
     if (event.affectsConfiguration('agentLiveView.enabled')) updateStatus();
     if (event.affectsConfiguration('agentLiveView.reserveFirstColumn') || event.affectsConfiguration('agentLiveView.maxColumns') ||
-        event.affectsConfiguration('agentLiveView.chatViewTypes')) {
+        event.affectsConfiguration('agentLiveView.chatViewTypes') || event.affectsConfiguration('agentLiveView.newColumnPosition')) {
       agentColumns.clear();
       lastShownAtByColumn.clear();
       currentFileByColumn.clear();
