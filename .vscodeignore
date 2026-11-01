@@ -1,0 +1,11 @@
+.vscode/**
+.github/**
+test/**
+images/**
+!images/icon.png
+*.png
+*.vsix
+*.zip
+.gitignore
+.vscode-test/**
+node_modules/**

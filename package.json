@@ -1,0 +1,260 @@
+{
+  "name": "agent-live-view",
+  "displayName": "Agent Live View",
+  "description": "Follow AI coding agents as they work: changed files open in their own editor columns with the edited lines highlighted. Works with Claude Code.",
+  "version": "0.5.0",
+  "publisher": "x2network",
+  "license": "MIT",
+  "private": true,
+  "preview": true,
+  "pricing": "Free",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#0b1628",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/craftyfm/x2-agent-live-view.git"
+  },
+  "bugs": {
+    "url": "https://github.com/craftyfm/x2-agent-live-view/issues"
+  },
+  "homepage": "https://github.com/craftyfm/x2-agent-live-view#readme",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "categories": [
+    "AI",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "claude code",
+    "claude",
+    "ai agent",
+    "agent",
+    "live edit",
+    "multi-agent",
+    "file watcher",
+    "follow changes"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/extension.js && node --check src/hook.js && node --check src/helpers.js && node --check src/uninstall.js",
+    "package": "npx --yes @vscode/vsce package",
+    "vscode:uninstall": "node ./src/uninstall.js",
+    "test:integration": "node test/integration/run.js"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentLiveView.toggle",
+        "title": "Agent Live View: Toggle Watching"
+      },
+      {
+        "command": "agentLiveView.viewingPace",
+        "title": "Agent Live View: Set Viewing Pace"
+      },
+      {
+        "command": "agentLiveView.manageExclusions",
+        "title": "Agent Live View: Manage Excluded Patterns"
+      },
+      {
+        "command": "agentLiveView.manageIncludes",
+        "title": "Agent Live View: Manage Included Patterns"
+      },
+      {
+        "command": "agentLiveView.installHooks",
+        "title": "Agent Live View: Install Claude Agent Tracking Hooks"
+      },
+      {
+        "command": "agentLiveView.removeHooks",
+        "title": "Agent Live View: Remove Claude Agent Tracking Hooks"
+      },
+      {
+        "command": "agentLiveView.clear",
+        "title": "Agent Live View: Close Automatically Opened Tabs"
+      },
+      {
+        "command": "agentLiveView.diagnostics",
+        "title": "Agent Live View: Show Diagnostics"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Live View",
+      "properties": {
+        "agentLiveView.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open changed source files automatically."
+        },
+        "agentLiveView.reserveFirstColumn": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the first editor column for your own work. Agent files open in the columns to its right."
+        },
+        "agentLiveView.maxColumns": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Maximum number of editor columns used for agents. Additional agents share the last one."
+        },
+        "agentLiveView.debounceMs": {
+          "type": "integer",
+          "default": 180,
+          "minimum": 50,
+          "maximum": 3000,
+          "description": "Wait after a file change before opening it."
+        },
+        "agentLiveView.highlightDurationMs": {
+          "type": "integer",
+          "default": 6000,
+          "minimum": 0,
+          "maximum": 30000,
+          "description": "Duration of edited-line highlighting."
+        },
+        "agentLiveView.maxFileSizeKb": {
+          "type": "integer",
+          "default": 1536,
+          "minimum": 32,
+          "maximum": 10240,
+          "description": "Ignore files larger than this value."
+        },
+        "agentLiveView.excludeFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".git",
+            ".claude",
+            "node_modules",
+            "vendor",
+            "dist",
+            "build",
+            "coverage",
+            ".next",
+            ".venv",
+            "venv",
+            ".cache",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".turbo",
+            "playwright-report",
+            "test-results"
+          ],
+          "description": "Exact directory names ignored anywhere in the workspace (not glob patterns). For pattern matching, use agentLiveView.excludeFiles."
+        },
+        "agentLiveView.ignoreUnattributedWhenHooksActive": {
+          "type": "boolean",
+          "default": false,
+          "description": "When agent hooks are installed, ignore file changes that cannot be confidently associated with Claude. Default is false so no edits are missed."
+        },
+        "agentLiveView.minViewMs": {
+          "type": "integer",
+          "default": 4000,
+          "minimum": 0,
+          "maximum": 20000,
+          "description": "Minimum time to keep an edited file as the front tab before switching to another file in the same editor column. Other agent columns can update independently."
+        },
+        "agentLiveView.filterMode": {
+          "type": "string",
+          "enum": [
+            "includeOnly",
+            "excludeOnly"
+          ],
+          "default": "includeOnly",
+          "enumDescriptions": [
+            "Only show files matching includeFiles, then apply exclusions.",
+            "Show all files except those matching excludeFiles and excludeFolders (legacy behaviour)."
+          ],
+          "description": "Choose whether Agent Live View starts with an allowlist or watches every file except exclusions. Exclusion rules always win.",
+          "markdownDescription": "`includeOnly` (recommended) displays **only** paths matching `agentLiveView.includeFiles`; `excludeOnly` retains the earlier behaviour. `excludeFiles` and `excludeFolders` always take priority."
+        },
+        "agentLiveView.includeFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*.tsx",
+            "**/*.ts",
+            "**/*.jsx",
+            "**/*.js",
+            "**/*.php",
+            "**/*.twig",
+            "**/*.vue",
+            "**/*.svelte",
+            "**/*.css",
+            "**/*.scss",
+            "**/*.sass",
+            "**/*.less",
+            "**/*.html",
+            "**/*.htm",
+            "**/*.py",
+            "**/*.sql",
+            "**/*.go",
+            "**/*.rs"
+          ],
+          "description": "Workspace-relative glob patterns for files to display in includeOnly mode. JSON is NOT included by default: add exact JSON files such as **/package.json or a narrow folder glob such as config/*.json. Supports *, ** and ?. Exclusions still override matching includes.",
+          "markdownDescription": "**Allowlist:** Only files matching these glob patterns can appear when `filterMode` is `includeOnly`. JSON is not included by default. Add just the JSON files you care about, e.g. `**/package.json`, `**/composer.json`, `config/important.json`. Continue to use `excludeFiles` for scratch, generated and other unwanted files. **Exclusions win** if a path matches both lists."
+        },
+        "agentLiveView.excludeFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/version.json",
+            "**/*.log",
+            "**/*.network",
+            "**/*.log.*",
+            "**/*.trace",
+            "**/*.trace.*",
+            "**/*.tmp",
+            "**/*.temp",
+            "**/*.swp",
+            "**/*.bak",
+            "**/*.cache",
+            "**/*.pyc",
+            "**/*.tsbuildinfo",
+            "**/*~",
+            "**/scratch*",
+            "**/scratch*/**",
+            "**/tmp/**",
+            "**/temp/**",
+            "**/traces/**",
+            "**/network/**",
+            "**/logs/**"
+          ],
+          "description": "Glob patterns (relative to each workspace folder) for files and folders Agent Live View should never open. Use **/*.log for all log files, **/traces/** for trace directories, **/scratch* for temporary scratch files. Supports *, ** and ?. Settings can be changed without restarting VS Code. Does not change what Claude edits or what appears in Explorer.",
+          "markdownDescription": "Glob patterns for files and directories to **exclude from Agent Live View only**. Examples: `**/*.log`, `**/*.trace`, `**/cache/**`, `**/scratch*/**`. Paths are relative to each workspace folder; patterns without `/` match filenames anywhere. Supports `*`, `**`, `?`. Changing patterns does not prevent Claude from writing files or hide files in Explorer. Normal tests such as `src/product.test.ts` remain visible by default."
+        }
+      }
+    }
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In untrusted workspaces, git is not used to locate changed lines, Claude Code hooks cannot be installed, and the workspace’s own file pattern settings are ignored.",
+      "restrictedConfigurations": [
+        "agentLiveView.includeFiles",
+        "agentLiveView.excludeFiles",
+        "agentLiveView.excludeFolders",
+        "agentLiveView.filterMode"
+      ]
+    },
+    "virtualWorkspaces": false
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "^2.5.2"
+  }
+}

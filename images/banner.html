@@ -1,0 +1,80 @@
+<!doctype html><html><head>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=JetBrains+Mono:wght@500&display=block" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:1774px;height:887px;overflow:hidden;font-family:'Plus Jakarta Sans',sans-serif;color:#fff}
+body{background:radial-gradient(1200px 700px at 78% 30%,#14305e 0%,rgba(20,48,94,0) 60%),radial-gradient(900px 600px at 0% 100%,#0e2550 0%,rgba(14,37,80,0) 60%),#0b1628;position:relative}
+.glow{position:absolute;left:-200px;right:-200px;bottom:-520px;height:700px;border-radius:50%;border-top:3px solid rgba(56,189,248,.55);box-shadow:0 -20px 80px rgba(56,189,248,.18)}
+.x2{position:absolute;top:26px;right:36px;width:96px}
+.left{position:absolute;left:96px;top:120px;width:800px}
+.icon{width:132px;height:132px;display:block;margin-bottom:36px;filter:drop-shadow(0 18px 40px rgba(34,197,94,.18))}
+h1{white-space:nowrap;font-size:96px;font-weight:800;letter-spacing:-2.5px;line-height:1;margin:0 0 26px}
+.sub{font-size:36px;font-weight:500;color:#bae6fd;line-height:1.3;border-left:6px solid #38bdf8;padding-left:22px}
+.sub b{color:#fff;font-weight:700}
+.win{position:absolute;left:950px;top:150px;width:740px;height:500px;border-radius:22px;background:#0f1d36;border:2px solid rgba(96,165,250,.35);box-shadow:0 40px 120px rgba(0,0,0,.55);transform:perspective(1800px) rotateY(-9deg) rotateX(3deg);overflow:hidden}
+.bar{height:54px;display:flex;align-items:center;gap:12px;padding:0 22px;background:#0c1830;border-bottom:1px solid rgba(96,165,250,.2)}
+.bar i{width:14px;height:14px;border-radius:50%;background:#334a70;display:block}
+.bar span{margin-left:auto;font-size:18px;color:#86efac;display:flex;align-items:center;gap:10px;font-weight:700}
+.bar span:before{content:"";width:12px;height:12px;border-radius:50%;background:#22c55e;box-shadow:0 0 12px #22c55e}
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;height:446px}
+.col{border-right:1px solid rgba(96,165,250,.18);padding:0}
+.col:last-child{border-right:0}
+.tab{height:48px;display:flex;align-items:center;gap:10px;padding:0 18px;font-size:18px;font-weight:700;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(96,165,250,.15)}
+.dot{width:12px;height:12px;border-radius:3px}
+.code{font-family:'JetBrains Mono',monospace;font-size:15px;padding:14px 0}
+.ln{height:30px;display:flex;align-items:center;padding:0 18px;gap:14px}
+.ln em{font-style:normal;color:#475d85;width:18px;text-align:right}
+.ln s{text-decoration:none;height:9px;border-radius:5px;background:#3b5a8c;display:block}
+.ln.hl{background:rgba(34,197,94,.2);box-shadow:inset 4px 0 0 #22c55e}
+.ln.hl s{background:#4ade80}
+.ln.hl em{color:#86efac}
+.you{color:#94a3b8}
+.pills{position:absolute;left:96px;right:96px;bottom:88px;display:flex;gap:30px}
+.pill{flex:1;height:104px;border-radius:22px;display:flex;align-items:center;gap:22px;padding:0 34px;font-size:32px;font-weight:700;background:rgba(15,29,54,.85);border:2px solid}
+.pill svg{width:44px;height:44px;flex:none}
+</style></head><body>
+<div class="glow"></div>
+<img class="x2" src="x2-logo.png">
+<div class="left">
+  <img class="icon" src="icon.svg">
+  <h1>Agent Live View</h1>
+  <div class="sub">Watch <b>Claude Code</b> edit your project,<br>file by file, as it happens.</div>
+</div>
+<div class="win">
+  <div class="bar"><i></i><i></i><i></i><span>LIVE</span></div>
+  <div class="cols">
+    <div class="col"><div class="tab you"><div class="dot" style="background:#64748b"></div>Your editor</div>
+      <div class="code">
+        <div class="ln"><em>1</em><s style="width:60%"></s></div><div class="ln"><em>2</em><s style="width:40%"></s></div>
+        <div class="ln"><em>3</em><s style="width:72%"></s></div><div class="ln"><em>4</em><s style="width:50%"></s></div>
+        <div class="ln"><em>5</em><s style="width:30%"></s></div><div class="ln"><em>6</em><s style="width:64%"></s></div>
+        <div class="ln"><em>7</em><s style="width:44%"></s></div><div class="ln"><em>8</em><s style="width:56%"></s></div>
+        <div class="ln"><em>9</em><s style="width:36%"></s></div><div class="ln"><em>10</em><s style="width:48%"></s></div>
+        <div class="ln"><em>11</em><s style="width:66%"></s></div><div class="ln"><em>12</em><s style="width:28%"></s></div>
+      </div></div>
+    <div class="col"><div class="tab"><div class="dot" style="background:#38bdf8"></div>Agent 1</div>
+      <div class="code">
+        <div class="ln"><em>14</em><s style="width:50%"></s></div><div class="ln"><em>15</em><s style="width:70%"></s></div>
+        <div class="ln"><em>16</em><s style="width:38%"></s></div><div class="ln hl"><em>17</em><s style="width:66%"></s></div>
+        <div class="ln hl"><em>18</em><s style="width:52%"></s></div><div class="ln hl"><em>19</em><s style="width:74%"></s></div>
+        <div class="ln"><em>20</em><s style="width:30%"></s></div><div class="ln"><em>21</em><s style="width:58%"></s></div>
+        <div class="ln"><em>22</em><s style="width:44%"></s></div><div class="ln"><em>23</em><s style="width:62%"></s></div>
+        <div class="ln"><em>24</em><s style="width:34%"></s></div><div class="ln"><em>25</em><s style="width:50%"></s></div>
+      </div></div>
+    <div class="col"><div class="tab"><div class="dot" style="background:#a78bfa"></div>Agent 2</div>
+      <div class="code">
+        <div class="ln"><em>40</em><s style="width:42%"></s></div><div class="ln"><em>41</em><s style="width:64%"></s></div>
+        <div class="ln"><em>42</em><s style="width:54%"></s></div><div class="ln"><em>43</em><s style="width:36%"></s></div>
+        <div class="ln"><em>44</em><s style="width:70%"></s></div><div class="ln"><em>45</em><s style="width:48%"></s></div>
+        <div class="ln"><em>46</em><s style="width:28%"></s></div><div class="ln hl"><em>47</em><s style="width:60%"></s></div>
+        <div class="ln hl"><em>48</em><s style="width:76%"></s></div><div class="ln"><em>49</em><s style="width:40%"></s></div>
+        <div class="ln"><em>50</em><s style="width:56%"></s></div><div class="ln"><em>51</em><s style="width:32%"></s></div>
+      </div></div>
+  </div>
+</div>
+<div class="pills">
+  <div class="pill" style="border-color:rgba(56,189,248,.55)"><svg viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 14h8M8 17h5"/></svg>Live file following</div>
+  <div class="pill" style="border-color:rgba(167,139,250,.55)"><svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></svg>A column per agent</div>
+  <div class="pill" style="border-color:rgba(74,222,128,.55)"><svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54z"/></svg>Include / exclude filters</div>
+</div>
+</body></html>

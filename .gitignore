@@ -1,0 +1,7 @@
+node_modules/
+*.vsix
+.DS_Store
+
+# Original banner artwork (uses third-party logos; replaced by images/banner.png)
+Agent_Live_View_Marketing_Banner.png
+.vscode-test/
