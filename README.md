@@ -20,7 +20,7 @@ Your own editor stays where it is, and so does the Claude Code chat if you have 
 
 1. Install the extension and open a project folder.
 2. Check that the status bar shows **Live View: ON**. Click it to pause or resume.
-3. Ask Claude Code to change some source files. Each changed file opens in a separate column, never in your editor's column or the chat's column.
+3. Ask Claude Code to change some source files. Each changed file opens in a separate column, never in your editor's column or the chat's column. If the chat is open in the editor area, the agent column is added between your editor and the chat, so the chat stays at the edge of the window. Adding that column moves keyboard focus for a moment and then puts it back.
 
 That is all you need for basic use. To get a column per agent and automatic tab clean-up, install the Claude Code hooks below.
 
@@ -68,6 +68,7 @@ Set `agentLiveView.filterMode` to `"excludeOnly"` to show every file except excl
 | --- | --- | --- |
 | `agentLiveView.enabled` | `true` | Open changed files automatically. |
 | `agentLiveView.reserveFirstColumn` | `true` | Keep the first editor column (not counting a chat panel) for your own work. |
+| `agentLiveView.newColumnPosition` | `besideChat` | Where new agent columns go when the chat is open in the editor area: `besideChat` puts them between your editor and the chat, `end` after the last column. |
 | `agentLiveView.chatViewTypes` | `["claudeVSCodePanel"]` | Columns holding these panels are never used for agent files. The default covers the Claude Code chat. |
 | `agentLiveView.maxColumns` | `3` | Maximum number of editor columns used for agents. |
 | `agentLiveView.minViewMs` | `4000` | Minimum time a file stays in front before another file replaces it in the same column. |

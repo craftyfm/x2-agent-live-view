@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- When the chat is open in the editor area, new agent columns are added between your editor and the chat instead of after the chat, so the chat stays at the edge of the window. Keyboard focus moves for a moment while the column is added and is then returned to the editor or chat that had it.
+- New setting `agentLiveView.newColumnPosition`: `besideChat` (default) or `end` for the 0.6.0 behaviour.
+- An agent no longer reuses a column that has been closed, or that now holds your editor, after the editor layout changes.
+
 ## 0.6.0
 
 - Agent files no longer open in the column holding the Claude Code chat when the chat is opened in the editor area. The chat can be on either side; agent files get a column of their own. If the chat is moved later, agents move out of its column.
