@@ -1,0 +1,39 @@
+# Publishes to the VS Code Marketplace when a version tag (e.g. v0.5.0) is pushed.
+# Authentication uses Marketplace Trusted Publishing (OIDC), so no token is stored.
+# The Marketplace publisher must have a Trusted Publishing policy for this
+# repository and the workflow file name "publish.yml".
+name: Publish
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check tag matches package.json version
+        if: github.ref_type == 'tag'
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+      - run: npm run check
+      - run: npm test
+      - run: xvfb-run -a npm run test:integration
+      - run: npx vsce publish --oidc --skip-duplicate

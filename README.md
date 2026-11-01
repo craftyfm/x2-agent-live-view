@@ -112,6 +112,8 @@ npm run package   # build a .vsix with @vscode/vsce
 
 Press F5 in VS Code to start an Extension Development Host with the extension loaded.
 
+To release, update `version` in `package.json` and `CHANGELOG.md`, merge to `main`, then push a matching tag (`git tag v0.5.0 && git push origin v0.5.0`). The [Publish workflow](.github/workflows/publish.yml) runs the tests and publishes to the Marketplace using Trusted Publishing, so no access token is stored in the repository.
+
 ## License
 
 [MIT](LICENSE) © X2 Network Pty Ltd
